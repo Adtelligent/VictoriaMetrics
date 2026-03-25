@@ -310,7 +310,9 @@ func (c *Client) newQueryRequest(ctx context.Context, query string, ts time.Time
 	case datasourceVLogs:
 		c.setVLogsInstantReqParams(req, query, ts)
 	case datasourceSQL:
-		c.setSQLInstantReqParams(req, query, ts)
+		if err := c.setSQLInstantReqParams(req, query, ts); err != nil {
+			return nil, err
+		}
 	default:
 		logger.Panicf("BUG: unsupported datasource type %q to create query request", c.dataSourceType)
 	}

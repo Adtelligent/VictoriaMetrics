@@ -853,7 +853,7 @@ func expectError(t *testing.T, err error, exp string) {
 }
 
 func TestSQLInstantQuery(t *testing.T) {
-	query := "SELECT 'all' AS host, count() AS value FROM demo.events HAVING count() > 5 FORMAT JSONCompact"
+	query := "SELECT 'all' AS host, count() AS c_value FROM demo.events HAVING count() > 5 FORMAT JSONCompact"
 	ts := time.Date(2026, 3, 24, 10, 0, 0, 0, time.UTC)
 
 	mux := http.NewServeMux()
@@ -867,7 +867,7 @@ func TestSQLInstantQuery(t *testing.T) {
 		if got := r.URL.Query().Get("time"); got != ts.Format(time.RFC3339) {
 			t.Fatalf("unexpected time: got %q want %q", got, ts.Format(time.RFC3339))
 		}
-		_, _ = w.Write([]byte(`{"meta":[{"name":"host","type":"String"},{"name":"value","type":"UInt64"}],"data":[["all",6]],"row":1}`))
+		_, _ = w.Write([]byte(`{"meta":[{"name":"host","type":"String"},{"name":"c_value","type":"UInt64"}],"data":[["all",6]],"row":1}`))
 	})
 
 	srv := httptest.NewServer(mux)
@@ -916,7 +916,7 @@ func TestSQLInstantQuery_MissingValueColumn(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if !strings.Contains(err.Error(), `named "value"`) {
+	if !strings.Contains(err.Error(), `exactly one numeric column with prefix "c_"`) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
