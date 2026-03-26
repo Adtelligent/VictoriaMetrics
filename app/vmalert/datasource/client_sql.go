@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -167,11 +166,7 @@ func sqlEvalTimestamp(resp *http.Response) (int64, error) {
 
 func parseSQLLabelValue(raw json.RawMessage, colType string) (string, error) {
 	if isNumericSQLType(colType) {
-		var num float64
-		if err := json.Unmarshal(raw, &num); err != nil {
-			return "", fmt.Errorf("cannot parse numeric label value %q: %w", string(raw), err)
-		}
-		return strconv.FormatFloat(num, 'f', -1, 64), nil
+		return string(raw), nil
 	}
 
 	var s string
