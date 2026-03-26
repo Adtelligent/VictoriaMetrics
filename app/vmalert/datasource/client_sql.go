@@ -32,6 +32,8 @@ var (
 	sqlTLSServerName         = flag.String("datasource.sql.tlsServerName", "", "Optional TLS server name to use for connections to -datasource.sql.url. By default, the server name from -datasource.sql.url is used")
 )
 
+var trailingFormatRE = regexp.MustCompile(`(?is)\s+format\s+jsoncompact\s*$`)
+
 const (
 	sqPath              = "/sql"
 	sqlValueAliasPrefix = "c_"
@@ -110,15 +112,11 @@ func newSQLClient() (*Client, error) {
 }
 
 func parseSQLNumericValue(raw json.RawMessage) (float64, error) {
-	var f float64
-	if err := json.Unmarshal(raw, &f); err == nil {
-		return f, nil
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
+	var f json.Number
+	if err := json.Unmarshal(raw, &f); err != nil {
 		return 0, fmt.Errorf("cannot parse %q as numeric value", string(raw))
 	}
-	return strconv.ParseFloat(s, 64)
+	return f.Float64()
 }
 
 func normalizeSQLType(t string) string {
@@ -166,6 +164,23 @@ func sqlEvalTimestamp(resp *http.Response) (int64, error) {
 	}
 	return t.Unix(), nil
 }
+
+func parseSQLLabelValue(raw json.RawMessage, colType string) (string, error) {
+	if isNumericSQLType(colType) {
+		var num float64
+		if err := json.Unmarshal(raw, &num); err != nil {
+			return "", fmt.Errorf("cannot parse numeric label value %q: %w", string(raw), err)
+		}
+		return strconv.FormatFloat(num, 'f', -1, 64), nil
+	}
+
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", fmt.Errorf("cannot parse string label value %q: %w", string(raw), err)
+	}
+	return s, nil
+}
+
 func valueColumnIndex(meta []sqlColumMeta) (int, error) {
 	idx := -1
 	for i, col := range meta {
@@ -185,8 +200,8 @@ func valueColumnIndex(meta []sqlColumMeta) (int, error) {
 	}
 	return idx, nil
 }
+
 func validateSQLQuery(query string) error {
-	var trailingFormatRE = regexp.MustCompile(`(?is)\s+format\s+jsoncompact\s*$`)
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return fmt.Errorf("sql query cannot be empty")
@@ -201,6 +216,7 @@ func validateSQLQuery(query string) error {
 	}
 	return nil
 }
+
 func parseSQLResponse(resp *http.Response) (Result, error) {
 	var r sqlResponse
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
@@ -213,14 +229,11 @@ func parseSQLResponse(resp *http.Response) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if valueIdx < 0 {
-		return Result{}, fmt.Errorf("SQL response has no numeric column to use as metric value")
-	}
 	ts, err := sqlEvalTimestamp(resp)
 	if err != nil {
 		return Result{}, err
 	}
-	var metrics []Metric
+	metrics := make([]Metric, 0, len(r.Data))
 	for _, row := range r.Data {
 		if len(row) != len(r.Meta) {
 			return Result{}, fmt.Errorf("SQL row has %d values, expected %d columns", len(row), len(r.Meta))
@@ -237,12 +250,9 @@ func parseSQLResponse(resp *http.Response) (Result, error) {
 				continue
 			}
 			var labelVal string
-			if err := json.Unmarshal(row[i], &labelVal); err != nil {
-				var numVal float64
-				if err := json.Unmarshal(row[i], &numVal); err != nil {
-					return Result{}, fmt.Errorf("error parsing label column %q: %w", col.Name, err)
-				}
-				labelVal = strconv.FormatFloat(numVal, 'f', -1, 64)
+			labelVal, err := parseSQLLabelValue(row[i], col.Type)
+			if err != nil {
+				return Result{}, fmt.Errorf("error parsing label column %q: %w", col.Name, err)
 			}
 			m.AddLabel(col.Name, labelVal)
 		}
