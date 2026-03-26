@@ -62,6 +62,7 @@ var (
 func InitSecretFlags() {
 	if !*showDatasourceURL {
 		flagutil.RegisterSecretFlag("datasource.url")
+		flagutil.RegisterSecretFlag("datasource.sql.url")
 	}
 }
 
@@ -117,12 +118,23 @@ func Init(extraParams url.Values) (QuerierBuilder, error) {
 		return nil, fmt.Errorf("failed to set request auth header to datasource %q: %w", *addr, err)
 	}
 
-	return &Client{
+	defaultClient := &Client{
 		c:                &http.Client{Transport: tr},
 		authCfg:          authCfg,
 		datasourceURL:    strings.TrimSuffix(*addr, "/"),
 		appendTypePrefix: *appendTypePrefix,
 		queryStep:        *queryStep,
 		extraParams:      extraParams,
+	}
+	sqlClient, err := newSQLClient()
+	if err != nil {
+		return nil, err
+	}
+	if sqlClient == nil {
+		return defaultClient, nil
+	}
+	return &Router{
+		defaultClient: defaultClient,
+		sqlClient:     sqlClient,
 	}, nil
 }
